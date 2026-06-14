@@ -3,27 +3,35 @@ import logger from "@/lib/logger";
 import { EXPIRATION_TIME } from "@/utils/counter";
 
 const MAX_RETRIES = 3;
-const BUSUANZI_URL =
-	"https://busuanzi.ibruce.info/busuanzi?jsonpCallback=BusuanziCallback_777487655111";
+const BUSUANZI_URL = "https://bsz.kafuchino.top/api";
 
 /**
- * Fetches analytics data from Busuanzi service with retry logic
- * @param url The Busuanzi service URL
+ * Fetches analytics data from custom Busuanzi backend with retry logic
+ * @param url The custom Busuanzi service URL
  * @param headers Request headers including referer
  * @returns The parsed analytics data or null if failed
  */
 async function fetchBusuanziData(url: string, headers: any) {
 	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
 		try {
+			const customHeaders = {
+				"x-bsz-referer": headers["Referer"] || "",
+				"Referer": headers["Referer"] || "",
+			};
+
 			const response = await fetch(url, {
-				method: "GET",
-				headers,
+				method: "POST",
+				headers: customHeaders,
 			});
+            
 			if (response.ok) {
-				const dataStr = await response.text();
-				const dataDict = JSON.parse(dataStr.substring(34, dataStr.length - 13));
-				logger.debug(dataDict);
-				return dataDict;
+				const json = await response.json();
+				if (json && json.success && json.data) {
+					logger.debug(json.data);
+					return json.data;
+				} else {
+					logger.debug(`API response success=false: ${JSON.stringify(json)}`);
+				}
 			} else {
 				logger.debug(`Non-200 response: ${response.status}`);
 			}
@@ -37,8 +45,8 @@ async function fetchBusuanziData(url: string, headers: any) {
 
 /**
  * Retrieves site unique visitor count from Busuanzi service
- * @param host The hostname
- * @param path The path
+ * @param hostSanitized The sanitized hostname
+ * @param hostOriginal The original hostname
  * @returns The site unique visitor count
  */
 async function fetchBusuanziSiteUV(hostSanitized: string, hostOriginal: string) {
@@ -66,7 +74,8 @@ async function fetchBusuanziSiteUV(hostSanitized: string, hostOriginal: string) 
 
 /**
  * Retrieves site page view count from Busuanzi service
- * @param host The hostname
+ * @param hostSanitized The sanitized hostname
+ * @param hostOriginal The original hostname
  * @returns The site page view count
  */
 async function fetchBusuanziSitePV(hostSanitized: string, hostOriginal: string) {
@@ -94,8 +103,10 @@ async function fetchBusuanziSitePV(hostSanitized: string, hostOriginal: string) 
 
 /**
  * Retrieves page view count for a specific page from Busuanzi service
- * @param host The hostname
- * @param path The path
+ * @param hostSanitized The sanitized hostname
+ * @param pathSanitized The sanitized path
+ * @param hostOriginal The original hostname
+ * @param pathOriginal The original path
  * @returns The page view count
  */
 async function fetchBusuanziPagePV(hostSanitized: string, pathSanitized: string, hostOriginal: string, pathOriginal: string) {
@@ -148,28 +159,30 @@ async function fetchBusuanziPagePV(hostSanitized: string, pathSanitized: string,
 
 /**
  * Sends a non-blocking request to Busuanzi to sync analytics data
- * @param host The hostname
- * @param path The path
+ * @param hostOriginal The original hostname
+ * @param pathOriginal The original path
  * @deprecated This function is no longer used
  */
 function notifyBusuanziService(hostOriginal: string, pathOriginal: string) {
 	// Note: host and path may not be sanitized here, as this function might be called directly
+	const refererUrl = `https://${hostOriginal}${pathOriginal}`;
 	const headers = {
-		Referer: `https://${hostOriginal}${pathOriginal}`,
-		Cookie: "busuanziId=89D15D1F66D2494F91FB315545BF9C2A",
+		"Referer": refererUrl,
+		"x-bsz-referer": refererUrl,
+		"Cookie": "busuanziId=89D15D1F66D2494F91FB315545BF9C2A",
 	};
 
 	// Fire and forget - explicitly non-blocking
 	fetch(BUSUANZI_URL, {
-		method: "GET",
+		method: "POST",
 		headers,
 	})
 		.then(() => {
-			logger.debug(`Busuanzi sync request sent for: https://${hostOriginal}${pathOriginal}`);
+			logger.debug(`Busuanzi sync request sent for: ${refererUrl}`);
 		})
 		.catch((e) => {
 			logger.error(
-				`Busuanzi sync failed for: https://${hostOriginal}${pathOriginal}. Error: ${e}`
+				`Busuanzi sync failed for: ${refererUrl}. Error: ${e}`
 			);
 		});
 }
